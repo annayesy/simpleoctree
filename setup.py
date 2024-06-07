@@ -4,8 +4,7 @@ from setuptools import setup, find_packages
 setup(
     name='pytreelib',
     version='1.0',
-    packages=find_packages(where='pytreelib'),
-    package_dir={'':'pytreelib'},
+    packages=['pytreelib'],
     license="MIT",
     author="Anna Yesypenko",
     author_email='annayesy@utexas.edu',
