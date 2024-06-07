@@ -1,7 +1,7 @@
 import numpy as np
-from pytree.src import morton
+from pytreelib import morton
 from time import time
-from pytree.src.abstract_tree import AbstractTree
+from pytreelib.abstract_tree import AbstractTree
 
 ##############################################################################
 ######### Utilities for searching in sorted 1d numpy arrays ##################
@@ -93,7 +93,7 @@ def _unbalanced_tree(XX,c0,L0,max_bs):
 
 def _balance_tree(XX,c0,L0,leaf_keys):
     """
-    Balances a tree structure by ensuring that the tree satisfies the 2:1 balance constraint on the leaves. 
+    Balances a tree structure by ensuring that the tree satisfies the 2:1 balance constraint on the leaves.
     The initial construction of a tree may contain coarse leaves which neighbor leaves much finer leaves,
     creating possibly large set of near-neigbor boxes. This procedure will refine these coarse leaf boxes
     so that two leaves which are adjacent are within one level of each other.
@@ -309,7 +309,7 @@ class MortonTree(AbstractTree):
 
     def _get_leaf_sep(self):
         """
-        Generates a permutation vector that groups indices belonging to the same leaf together and 
+        Generates a permutation vector that groups indices belonging to the same leaf together and
         computes separation indices for the permutation.
 
         Returns:
