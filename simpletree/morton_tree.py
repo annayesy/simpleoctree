@@ -1,7 +1,7 @@
 import numpy as np
-from pytreelib import morton
+from simpletree import morton
 from time import time
-from pytreelib.abstract_tree import AbstractTree
+from simpletree.abstract_tree import AbstractTree
 
 ##############################################################################
 ######### Utilities for searching in sorted 1d numpy arrays ##################

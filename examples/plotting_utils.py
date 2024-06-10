@@ -1,5 +1,5 @@
 import matplotlib.patches as patches
-from pytreelib import BalancedTree,morton
+from simpletree import BalancedTree,morton
 
 import matplotlib.pyplot as plt
 

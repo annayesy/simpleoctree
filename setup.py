@@ -2,13 +2,13 @@
 from setuptools import setup, find_packages
 
 setup(
-    name='pytreelib',
+    name='simpletree',
     version='1.0',
-    packages=['pytreelib'],
+    packages=['simpletree'],
     license="MIT",
     author="Anna Yesypenko",
     author_email='annayesy@utexas.edu',
-    url='https://github.com/annayesy/pytree',
+    url='https://github.com/annayesy/simplebalancedoctree',
     install_requires=[
         'numpy',
     ],

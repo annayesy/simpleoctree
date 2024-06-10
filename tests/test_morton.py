@@ -1,6 +1,6 @@
 import pytest
 import numpy as np
-from pytreelib import morton, morton_tree
+from simpletree import morton, morton_tree
 
 np.random.seed(0)
 

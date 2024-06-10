@@ -1,6 +1,6 @@
 import pytest
 import numpy as np
-from pytreelib import get_point_dist, BalancedTree
+from simpletree import get_point_dist, BalancedTree
 
 np.random.seed(0)
 
