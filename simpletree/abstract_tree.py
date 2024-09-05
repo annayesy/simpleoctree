@@ -87,10 +87,6 @@ class AbstractTree(metaclass = ABCMeta):
         pass
     
     @abstractmethod
-    def get_leaves_above(self,level):
-        pass
-    
-    @abstractmethod
     def is_leaf(self,box):
         pass
     

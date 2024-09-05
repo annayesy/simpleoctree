@@ -440,6 +440,12 @@ class MortonTree(AbstractTree):
     def get_boxes_level(self,lev):
         return np.arange(self.level_sep[lev],self.level_sep[lev+1])
 
+    def get_leaves_above(self,lev):
+        lev_leafs = morton.get_level(self.leaf_keys)
+        keys      = self.leaf_keys[lev_leafs<lev]
+
+        return findin_sorted_vec(self.tree_keys,keys)
+
     def get_box_inds(self,box):
         key = self.tree_keys[box]
 
