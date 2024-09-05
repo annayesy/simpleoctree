@@ -1,128 +1,154 @@
 import numpy as np
-from abc import ABCMeta, abstractmethod, abstractproperty
+from abc import ABCMeta, abstractmethod,abstractproperty
 
+###
 # Abstract Tree class.
 # To instantiate a class of this type, use syntax `class MyTreeClass(AbstractTree)`.
 # All instantiated classes of this type MUST implement the abstract methods.
 # Otherwise, you will encounter a TypeError.
-class AbstractTree(metaclass=ABCMeta):
-
+class AbstractTree(metaclass = ABCMeta):
+    
+    ### get_nlevels
     # Returns: number [int] of levels.
     @abstractproperty
     def nlevels(self):
         pass
-
+    
+    ### get_num_boxes
     # Returns: number [int] of boxes.
     @abstractproperty
     def nboxes(self):
         pass
-
-    # Returns: total number [int] of points.
+    
+    ### get_num_points
+    # Returns: number [int] of points.
     @abstractproperty
     def N(self):
         pass
-
-    # Returns: level [int] of the box.
+    
+    ### get_postorder_traversal
     @abstractmethod
-    def get_box_level(self, box):
+    def get_box_level(self,box):
         pass
-
+    
     ################## Getters for box attributes related to geometry ##################
-
-    # Returns adjacent boxes on the same level
+    
+    ### Adjacent boxes on the same level
     @abstractmethod
-    def get_box_colleague_neigh(self, box):
+    def get_box_colleague_neigh(self,box):
+        pass
+    
+    ### returns boxes A, where A is a leaf on a level above and A is adjacent to B
+    @abstractmethod
+    def get_box_coarse_neigh(self,box):
         pass
 
-    # Returns boxes L, where L is a leaf on a level above and L is adjacent to B
-    @abstractmethod
-    def get_box_coarse_neigh(self, box):
-        pass
-
-    # The near-field of a box consists of its colleagues and coarse neighbors
-    def get_box_neighbors(self, box):
-        # Get colleague neighbors
-        coll = self.get_box_colleague_neigh(box)
-        # Get coarse neighbors
+    def get_box_neighbors(self,box):
+        coll   = self.get_box_colleague_neigh(box)
         coarse = self.get_box_coarse_neigh(box)
-
-        # Concatenate colleague and coarse neighbors
-        neigh_list = np.concatenate((coll, coarse))
-        # Remove the box itself from the neighbor list
-        tmp = np.setdiff1d(neigh_list, np.array([box]))
-        # Add the box itself at the start of the neighbor list
-        neigh_list = np.concatenate((np.array([box]), tmp))
-
+        
+        neigh_list = np.concatenate((coll,coarse))
+        tmp = np.setdiff1d(neigh_list,np.array([box]))
+        neigh_list = np.concatenate((np.array([box]),tmp))
+        
         return neigh_list
-
+    
+    
     ################# Getter and setters for box indices ##################
-    # The process of skeletonization of a box separates indices into an
+    # The process of skeletonization of a box separates indices into an 
     # active and inactive set.
-
+    
+    ### get_box_inds
     # Input: box [int].
-    # Returns: inds [1d int numpy array] of points in box B.
+    # Returns: inds [1d int numpy array] of points in box B .
     @abstractmethod
-    def get_box_inds(self, box):
+    def get_box_inds(self,box):
         pass
-
-    # Returns the parent box of the given box
+    
     @abstractmethod
-    def get_box_parent(self, box):
+    def get_box_parent(self,box):
         pass
-
-    # Returns the length of the box
+    
+    
     @abstractmethod
-    def get_box_length(self, box):
+    def get_box_length(self,box):
         pass
-
-    # Returns the center of the box
+    
     @abstractmethod
-    def get_box_center(self, box):
+    def get_box_center(self,box):
         pass
-
-    # Returns a list of all leaf boxes
+    
     @abstractmethod
     def get_leaves(self):
         pass
-
-    # Returns all boxes at a specific level
+    
     @abstractmethod
-    def get_boxes_level(self, level):
+    def get_boxes_level(self,level):
         pass
-
-    # Returns whether a box is a leaf
+    
     @abstractmethod
-    def is_leaf(self, box):
+    def get_leaves_above(self,level):
         pass
-
-    # Returns indices of points in neighboring boxes
-    def get_neigh_inds(self, box):
-        # Function to get indices of points in a box
+    
+    @abstractmethod
+    def is_leaf(self,box):
+        pass
+    
+    def get_neigh_inds(self,box):
         ind_func = self.get_box_inds
 
-        # Get neighbors of the box
         box_neighbors = self.get_box_neighbors(box)
-        num_neigh = box_neighbors.shape[0]
+        num_neigh     = box_neighbors.shape[0]
 
-        # Allocate memory for neighbor indices
-        max_ind_count = 1000
-        tot_neigh_inds = np.zeros(max_ind_count, dtype=int)
-        acc = 0
-
-        # Iterate through each neighbor
+        max_ind_count  = 1000
+        tot_neigh_inds = np.zeros(max_ind_count,dtype=int); acc = 0
         for neigh in box_neighbors:
             neigh_inds = ind_func(neigh)
-            # Resize array if needed
-            if acc + neigh_inds.shape[0] > max_ind_count:
+            if (acc + neigh_inds.shape[0] > max_ind_count):
                 max_ind_count += max_ind_count + neigh_inds.shape[0]
-                tmp = np.zeros(max_ind_count, dtype=int)
+                tmp = np.zeros(max_ind_count,dtype=int)
                 tmp[:acc] = tot_neigh_inds[:acc]
-                tot_neigh_inds = tmp
-                del tmp
+                tot_neigh_inds = tmp; del tmp
 
-            # Copy neighbor indices into the total neighbor indices array
-            tot_neigh_inds[acc: acc + neigh_inds.shape[0]] = neigh_inds.copy()
+            tot_neigh_inds[acc : acc + neigh_inds.shape[0]] = neigh_inds.copy()
             acc += neigh_inds.shape[0]
-
-        # Return the array of neighbor indices
         return tot_neigh_inds[:acc]
+
+    def _color_boxes(self):
+
+        num_colors = 1
+        box_colors = np.ones(self.nboxes,dtype=int) * (-1)
+        for box in range(self.nboxes):
+
+            neigh_boxes  = self.get_box_neighbors(box)
+            neigh_colors = box_colors[neigh_boxes]
+
+            unavailable_colors = np.unique(neigh_colors[neigh_colors >= 0])
+
+            if (unavailable_colors.shape[0] == num_colors):
+
+                # add new color
+                box_colors[box] = num_colors
+                num_colors += 1
+            else:
+
+                available_colors = np.setdiff1d(np.arange(num_colors),unavailable_colors)
+                box_colors[box] = available_colors[0]
+        self.box_colors = box_colors
+        self.num_colors = num_colors
+
+    def get_boxes_level_color(self,lev,color):
+
+        if (not hasattr(self,'box_colors')):
+            self._color_boxes()
+
+        assert color < self.num_colors; assert color >= 0
+        boxes_lev  = self.get_boxes_level(lev)
+        box_colors = self.box_colors[boxes_lev]
+
+        inds_color = np.where(box_colors == color)[0]
+
+        if (inds_color.shape[0] == 0):
+            return np.array([],dtype=int)
+        else:
+            return boxes_lev[ inds_color ]

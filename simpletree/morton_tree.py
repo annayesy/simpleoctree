@@ -239,6 +239,7 @@ class MortonTree(AbstractTree):
         self.leaf_size = leaf_size
         self.leaf_size_param = leaf_size
         self._form_tree(leaf_size)
+        self._color_boxes()
 
     @property
     def N(self):
