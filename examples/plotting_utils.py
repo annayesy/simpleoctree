@@ -15,5 +15,5 @@ def add_patches(ax,tree,box_list,keys=False,\
                              linewidth=linewidth, edgecolor=edgecolor, \
                                  facecolor=facecolor,alpha=alpha)
         if (not keys and text_label):
-            ax.text(c[0],c[1],"$\\mathcal{B}_{%d}$" % (box),horizontalalignment='center',fontsize=fontsize)
+            ax.text(c[0],c[1],"${%d}$" % (box),horizontalalignment='center',fontsize=fontsize)
         ax.add_patch(rect)
