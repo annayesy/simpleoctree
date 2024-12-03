@@ -22,6 +22,52 @@ def get_sphere_surface(center, sphere_length, nproxy):
     return XX + center
 
 
+def get_cube_surface(center, box_length, nproxy):
+
+    def cheb_points(p, length):
+        """Generate Chebyshev points scaled to [0, length]."""
+        points = np.cos(np.pi * np.arange(p + 1) / p)
+        return ((points + 1) / 2) * length
+
+    def get_chebyshev_grid(center, box_length, p):
+        """Create a Chebyshev grid for a given dimension."""
+        cheb_vec = cheb_points(p - 1, box_length)[1:-1]
+        if len(center) == 2:
+            x, y = np.meshgrid(cheb_vec, cheb_vec)
+            return np.vstack([x.ravel(), y.ravel()]).T + center - 0.5 * box_length
+        else:
+            x, y, z = np.meshgrid(cheb_vec, cheb_vec, cheb_vec)
+            return np.vstack([x.ravel(), y.ravel(), z.ravel()]).T + center - 0.5 * box_length
+
+    d         = len(center)
+    p         = np.ceil( (nproxy / (2*d)) ** (1/(d-1)) ) + 2
+    grid_full = get_chebyshev_grid(center, box_length, p)
+    hmin      = np.max(np.abs(grid_full[1] - grid_full[0]))
+
+    # Boolean filter for surface points
+    if len(center) == 2:
+        # In 2D, select points close to the edges based on hmin
+        on_edge = (
+            (np.abs(grid_full[:, 0] - (center[0] - 0.5 * box_length)) < hmin) |
+            (np.abs(grid_full[:, 0] - (center[0] + 0.5 * box_length)) < hmin) |
+            (np.abs(grid_full[:, 1] - (center[1] - 0.5 * box_length)) < hmin) |
+            (np.abs(grid_full[:, 1] - (center[1] + 0.5 * box_length)) < hmin)
+        )
+    else:
+        # In 3D, select points close to the faces based on hmin
+        on_edge = (
+            (np.abs(grid_full[:, 0] - (center[0] - 0.5 * box_length)) < hmin) |
+            (np.abs(grid_full[:, 0] - (center[0] + 0.5 * box_length)) < hmin) |
+            (np.abs(grid_full[:, 1] - (center[1] - 0.5 * box_length)) < hmin) |
+            (np.abs(grid_full[:, 1] - (center[1] + 0.5 * box_length)) < hmin) |
+            (np.abs(grid_full[:, 2] - (center[2] - 0.5 * box_length)) < hmin) |
+            (np.abs(grid_full[:, 2] - (center[2] + 0.5 * box_length)) < hmin)
+        )
+
+    surface_points = grid_full[on_edge]
+    return surface_points
+
+
 ###########################################################
 
 def get_point_dist(N,dist_str):
