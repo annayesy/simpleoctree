@@ -1,26 +1,45 @@
 import numpy as np
 
-def get_sphere_surface(center, sphere_length, nproxy):
-    radius = 0.5*sphere_length
+def get_sphere_surface(center, sphere_length, npoints):
+    """
+    Generate uniformly distributed points on the surface of a sphere
+    using the Fibonacci lattice method.
 
-    if (center.shape[0] == 2):
+    Parameters:
+    - center: ndarray of shape (2,) or (3,), the center of the sphere.
+    - sphere_length: float, the diameter of the sphere.
+    - npoints: int, the number of points to generate.
 
-        theta = np.random.rand(nproxy) * 2 * np.pi
+    Returns:
+    - points: ndarray of shape (npoints, len(center)), the generated points.
+    """
+    radius = 0.5 * sphere_length  # Calculate radius from diameter
 
-        XX      = np.zeros((nproxy,2))
-        XX[:,0] = radius * np.sin(theta)
-        XX[:,1] = radius * np.cos(theta)
-    elif (center.shape[0] == 3):
+    if center.shape[0] == 2:
+        # Generate 2D points on a circle (Fibonacci is not directly for 2D, but can adapt)
+        indices = np.arange(0, npoints, dtype=float) + 0.5
+        theta = 2 * np.pi * indices / npoints
 
-        theta = np.random.rand(nproxy) * 2 * np.pi
-        phi   = np.arccos(np.random.rand(nproxy) * 2 - 1)
+        x = radius * np.cos(theta)
+        y = radius * np.sin(theta)
 
-        XX      = np.zeros((nproxy,3))
-        XX[:,0] = radius * np.cos(theta) * np.sin(phi)
-        XX[:,1] = radius * np.sin(theta) * np.sin(phi)
-        XX[:,2] = radius * np.cos(phi)
-    return XX + center
+        points = np.stack((x, y), axis=1)
+    elif center.shape[0] == 3:
+        # Generate 3D points on a sphere
+        indices = np.arange(0, npoints, dtype=float) + 0.5
+        phi = np.arccos(1 - 2 * indices / npoints)
+        theta = np.pi * (1 + 5**0.5) * indices  # Golden angle
 
+        x = radius * np.sin(phi) * np.cos(theta)
+        y = radius * np.sin(phi) * np.sin(theta)
+        z = radius * np.cos(phi)
+
+        points = np.stack((x, y, z), axis=1)
+    else:
+        raise ValueError("Center must be a 2D or 3D vector.")
+
+    # Shift points by the center of the sphere
+    return points + center
 
 def get_cube_surface(center, box_length, nproxy):
 
