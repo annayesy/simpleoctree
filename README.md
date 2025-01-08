@@ -1,15 +1,15 @@
-# simplebalancedoctree
-An adaptive 2:1 balanced tree for point distributions in 2D and 3D.
+# simpleoctree
 
-Written in Python with minimal dependencies.
-
+[![DOI](https://zenodo.org/badge/811938075.svg)](https://doi.org/10.5281/zenodo.14613403)
 [![License](https://img.shields.io/github/license/annayesy/slabLU)](./LICENSE.md)
 [![Top language](https://img.shields.io/github/languages/top/annayesy/simplebalancedoctree)](https://www.python.org)
 ![Code size](https://img.shields.io/github/languages/code-size/annayesy/simplebalancedoctree)
 [![Latest commit](https://img.shields.io/github/last-commit/annayesy/simplebalancedoctree)](https://github.com/annayesy/simplebalancedoctree/commits/main)
 
-Overview
-SimpleBalancedOctree is a Python package that adaptively partitions point distributions in 2D and 3D into a 2:1 balanced tree structure. The package ensures that any two neighboring leaf nodes are either on the same level or differ by one level, resulting in a neighbor list of bounded size.
+An adaptive 2:1 balanced tree for point distributions in 2D and 3D, written in Python with minimal dependencies.
+
+## Overview
+**simpleoctree** is a Python package that adaptively partitions point distributions in 2D and 3D into a 2:1 balanced tree structure. The package ensures that any two neighboring leaf nodes are either on the same level or differ by one level, resulting in a neighbor list of bounded size.
 
 <p align="center">
     <img src="https://github.com/annayesy/simplebalancedoctree/blob/main/examples/tree_balance.png" width="75%"/>
