@@ -394,6 +394,57 @@ class MortonTree(AbstractTree):
         return Clist,Llist
 
 
+    def get_ordered_colleague_pairs(self,root_level=1):
+
+        Clist = self.Clist_tmp; nmax   = Clist.shape[-1]
+
+        offset_unordered = 0;
+        count_ordered    = 0
+
+        unordered_list_pairs   = np.zeros((nmax*self.nboxes,2),dtype=int)
+        ngrouped_ordered       = np.zeros(nmax*self.nlevels,dtype=int)
+        grouped_list_pairs     = np.zeros((nmax*self.nlevels,self.nboxes,2),dtype=int)
+
+        for lev in range(root_level+1,self.nlevels):
+
+            boxes_lev = np.arange(self.level_sep[lev],self.level_sep[lev+1])
+            Clist_lev = Clist[boxes_lev]
+
+            for j in range(nmax):
+
+                tmp_bool = Clist_lev[:,j] > 0
+                targets = boxes_lev[tmp_bool]
+                sources = Clist_lev[tmp_bool,j]
+
+                tree_pair_bool = np.logical_and(np.logical_not(self.are_leaves(sources)),\
+                                                np.logical_not(self.are_leaves(targets)))
+
+                ordered_num     = np.sum(tree_pair_bool)
+                unordered_num   = targets.shape[0] - ordered_num
+
+                stacked_tar_scs = np.vstack((targets,sources)).T
+
+                if (ordered_num > 0):
+                    grouped_list_pairs[count_ordered,:ordered_num] = stacked_tar_scs[tree_pair_bool]
+                    ngrouped_ordered[count_ordered]                = ordered_num
+                    count_ordered += 1
+
+                unordered_list_pairs[offset_unordered : offset_unordered + unordered_num] = \
+                stacked_tar_scs[np.logical_not(tree_pair_bool)]
+                offset_unordered += unordered_num
+
+        unordered_list_pairs = unordered_list_pairs[:offset_unordered]
+
+        if (count_ordered > 0):
+            ngrouped_ordered     = ngrouped_ordered[:count_ordered]
+            grouped_list_pairs   = grouped_list_pairs[:count_ordered,:np.max(ngrouped_ordered)]
+        else:
+            ngrouped_ordered     = ngrouped_ordered[:0]
+            grouped_list_pairs = np.zeros((nmax*self.nlevels,0,2),dtype=int)
+
+        return unordered_list_pairs,ngrouped_ordered,grouped_list_pairs
+
+
     ######################################################################################
     ## The functions below implement abstract methods of AbstractTree.
     ## For descriptions, see `abstract_tree.py`.
@@ -415,6 +466,11 @@ class MortonTree(AbstractTree):
         valid_keys = in_sorted_vec(self.tree_keys,child_keys)
         return findin_sorted_vec(self.tree_keys,child_keys[valid_keys])
 
+    def get_box_children_fullvec(self,box):
+        key = self.tree_keys[box]
+        child_keys = morton.get_children(key,ndim=self.ndim)
+        return findin_sorted_vec(self.tree_keys,child_keys)
+
     def get_box_colleague_neigh(self,box):
 
         box_list = self.Clist_tmp[box]
@@ -429,6 +485,11 @@ class MortonTree(AbstractTree):
         key = self.tree_keys[box]
 
         return morton.get_key_params(key,self.c0,self.L0)[0]
+
+    def get_boxes_centers(self,boxes):
+
+        keys = self.tree_keys[boxes]
+        return morton.get_keys_centers(keys,self.c0,self.L0)
 
     def get_box_length(self,box):
         key = self.tree_keys[box]
@@ -469,3 +530,7 @@ class MortonTree(AbstractTree):
     def is_leaf(self,box):
         key = self.tree_keys[box]
         return in_sorted(self.leaf_keys,key)
+
+    def are_leaves(self,box):
+        key = self.tree_keys[box]
+        return in_sorted_vec(self.leaf_keys,key)

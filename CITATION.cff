@@ -1,0 +1,11 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it using the following metadata."
+title: "SimpleOctree in Python"
+authors:
+  - family-names: "Yesypenko"
+    given-names: "Anna"
+    orcid: "https://orcid.org/0009-0008-1409-4075"
+date-released: 2025-01-07
+version: "v1.0.1"
+doi: "10.5281/zenodo.14613403"
+url: "https://github.com/annayesy/simpleoctree/"
