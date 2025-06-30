@@ -1,6 +1,6 @@
 import numpy as np
-from simpletree_dev.abstract_tree import AbstractTree
-from simpletree_dev.morton_tree   import MortonTree
+from simpletree.abstract_tree import AbstractTree
+from simpletree.morton_tree   import MortonTree
 
 def childvec_helper(child_vec):
 
@@ -187,7 +187,7 @@ class BinaryTree(AbstractTree):
 							center_list[offset_lev1],length_list[offset_lev1] = \
 							shift_center_length( mcenter,Ldim,np.array([0,-1,+1]) )
 
-							# assign mbox split helper here 
+							# assign mbox split helper here
 							offset_lev2 += assign_mbox_split_helper(child_vec[np.array([1,5])],\
 								offset_lev1,offset_lev2)
 
@@ -221,7 +221,7 @@ class BinaryTree(AbstractTree):
 							center_list[offset_lev1],length_list[offset_lev1] = \
 							shift_center_length( mcenter,Ldim,np.array([0,+1,-1]) )
 
-							# assign mbox split helper here 
+							# assign mbox split helper here
 							offset_lev2 += assign_mbox_split_helper(child_vec[np.array([2,6])],\
 								offset_lev1,offset_lev2)
 
@@ -234,13 +234,13 @@ class BinaryTree(AbstractTree):
 							center_list[offset_lev1],length_list[offset_lev1] = \
 							shift_center_length( mcenter,Ldim,np.array([0,+1,+1]) )
 
-							# assign mbox split helper here 
+							# assign mbox split helper here
 							offset_lev2 += assign_mbox_split_helper(child_vec[np.array([3,7])],\
 								offset_lev1,offset_lev2)
 
 							offset_lev1 += 1
 						offset_lev0 += 1
-					
+
 
 		self.level_sep   = lev_offset
 		self.center_list = center_list
@@ -270,7 +270,7 @@ class BinaryTree(AbstractTree):
 		return self.length_list[box]
 
 	def get_box_level(self,box):
-		return np.where((self.level_sep - box) > 0)[0][0] - 1 
+		return np.where((self.level_sep - box) > 0)[0][0] - 1
 
 	def get_box_children(self,box):
 		tmp = self.child_list[box]
@@ -290,7 +290,7 @@ class BinaryTree(AbstractTree):
 		if self.mbox_list[box] > 0:
 
 			return self.mtree.get_box_inds(self.mbox_list[box])
-		
+
 		elif (self.ndim == 2 or (self.ndim == 3 and np.mod(self.get_box_level(box),3) == 2)):
 			return self.acc_inds(self.get_box_children(box))
 
