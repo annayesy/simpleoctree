@@ -481,6 +481,13 @@ class MortonTree(AbstractTree):
         box_list = self.Llist_tmp[box]
         return np.unique(box_list[box_list >= 0])
 
+    def get_box_fine_neigh(self,box):
+        rows, _ = np.where(self.Llist_tmp == box)
+        rows = np.unique(rows)
+
+        assert np.all(self.are_leaves(rows))
+        return rows
+
     def get_box_center(self,box):
         key = self.tree_keys[box]
 
