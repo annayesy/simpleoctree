@@ -8,7 +8,7 @@ setup(
     license="MIT",
     author="Anna Yesypenko",
     author_email='annayesy@utexas.edu',
-    url='https://github.com/annayesy/simplebalancedoctree',
+    url='https://github.com/annayesy/simpleoctree',
     install_requires=[
         'numpy',
     ],

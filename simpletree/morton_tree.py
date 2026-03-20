@@ -1,6 +1,5 @@
 import numpy as np
 from simpletree import morton
-from time import time
 from simpletree.abstract_tree import AbstractTree
 
 ##############################################################################
@@ -35,6 +34,18 @@ def findin_sorted(sorted_list,entry):
 
 ##########################################################################
 
+def _max_level(ndim):
+    if (ndim == 2):
+        return morton.MAX_LEVEL2
+    else:
+        return morton.MAX_LEVEL3
+
+def _sorted_deepest_raw_keys(XX,c0,L0,ndim):
+    deepest_level = _max_level(ndim) - 1
+    anchors_points = morton.points_to_anchors(XX,deepest_level,c0,L0,ndim=ndim)
+    deepest_keys = morton.anchors_to_keys(anchors_points,ndim=ndim)
+    return deepest_level,np.sort(morton.clear_level(deepest_keys))
+
 def _unbalanced_tree(XX,c0,L0,max_bs):
     """
     Constructs an unbalanced tree structure for a given set of points `XX` using Morton codes.
@@ -54,38 +65,51 @@ def _unbalanced_tree(XX,c0,L0,max_bs):
     """
 
     N = XX.shape[0]; ndim = XX.shape[-1]
-    if (ndim == 2):
-        MAX_LEVEL = morton.MAX_LEVEL2
-    else:
-        MAX_LEVEL = morton.MAX_LEVEL3
+    MAX_LEVEL = _max_level(ndim)
+    deepest_level,sorted_raw_keys = _sorted_deepest_raw_keys(XX,c0,L0,ndim)
 
-    # find leaves in tree
-    active_bool = np.ones(N,dtype=bool)
+    # active mask is stored in deepest-level Morton order. A coarse octant and
+    # all of its descendants occupy a contiguous range in this ordering.
+    active_sorted = np.ones(N,dtype=bool)
     leaf_keys   = np.zeros(N,int); acc_leaves = 0
 
     for lev in range(MAX_LEVEL):
 
-        if (np.sum(active_bool) == 0):
+        if (not np.any(active_sorted)):
             break
 
-        # morton codes for lev_curr
-        active_inds = np.where(active_bool)[0]
+        active_inds = np.flatnonzero(active_sorted)
+        shift = ndim * (deepest_level - lev)
+        keys_points = sorted_raw_keys[active_inds] >> shift
 
-        anchors_points = morton.points_to_anchors(XX[active_inds],lev,c0,L0,ndim=ndim)
-        keys_points    = morton.anchors_to_keys(anchors_points,ndim=ndim)
-        sorted_perm    = np.argsort(keys_points)
+        if (keys_points.shape[0] == 0):
+            break
 
-        unique,indices,counts = np.unique(keys_points[sorted_perm],return_counts=True,return_index=True)
-        indices = np.concatenate(( indices, np.array([np.sum(active_bool)]) ))
+        change_inds = np.flatnonzero(np.diff(keys_points)) + 1
+        starts = np.concatenate((np.array([0],dtype=int),change_inds))
+        ends = np.concatenate((change_inds,np.array([keys_points.shape[0]],dtype=int)))
+        counts = ends - starts
 
-        nleaf_lev = 0
-        for j in range(unique.shape[0]):
-            if (counts[j] <= max_bs):
-                tmp_inds = sorted_perm[indices[j] : indices[j+1] ]
-                active_bool[active_inds [tmp_inds]] = 0
-                nleaf_lev += 1
+        leaf_group_bool = counts <= max_bs
+        if (not np.any(leaf_group_bool)):
+            continue
 
-        leaf_keys[acc_leaves : acc_leaves + nleaf_lev] = unique[counts <= max_bs]
+        keep_starts = starts[leaf_group_bool]
+        keep_ends = ends[leaf_group_bool]
+        keep_raw = keys_points[keep_starts]
+
+        for start,end in zip(keep_starts,keep_ends):
+            active_sorted[active_inds[start:end]] = False
+
+        nleaf_lev = keep_raw.shape[0]
+        leaf_keys[acc_leaves : acc_leaves + nleaf_lev] = morton.set_level(keep_raw,lev)
+        acc_leaves += nleaf_lev
+
+    if (np.any(active_sorted)):
+        active_inds = np.flatnonzero(active_sorted)
+        keep_raw = np.unique(sorted_raw_keys[active_inds])
+        nleaf_lev = keep_raw.shape[0]
+        leaf_keys[acc_leaves : acc_leaves + nleaf_lev] = morton.set_level(keep_raw,deepest_level)
         acc_leaves += nleaf_lev
 
     leaf_keys = leaf_keys[:acc_leaves]
@@ -93,64 +117,96 @@ def _unbalanced_tree(XX,c0,L0,max_bs):
 
 def _balance_tree(XX,c0,L0,leaf_keys):
     """
-    Balances a tree structure by ensuring that the tree satisfies the 2:1 balance constraint on the leaves.
-    The initial construction of a tree may contain coarse leaves which neighbor leaves much finer leaves,
-    creating possibly large set of near-neigbor boxes. This procedure will refine these coarse leaf boxes
-    so that two leaves which are adjacent are within one level of each other.
+    Balance the tree using the bottom-up octant-set sweep from Algorithm 1 in
+    Lashuk et al. (2016), operating on octants only.
+
+    Starting from the complete unbalanced tree, we collect the set of non-leaf
+    octants level by level from finest to coarsest. At each level we propagate
+    the parents of all possible colleagues upward, which identifies the octants
+    that must be non-leaf in the next coarser level for the 2:1 balance
+    constraint to hold.
 
     Parameters:
-    - XX: A 2D NumPy array of shape (N, ndim), where N is the number of points and `ndim` is the number of dimensions
-          (either 2 or 3). This array contains the coordinates of the points used for partitioning.
-    - c0: A float or array-like object specifying the origin (or center) used for computing Morton codes.
-    - L0: A float specifying the length of the bounding box used for computing Morton codes.
-    - leaf_keys: A 1D NumPy array of integers containing the Morton keys of the initial leaf nodes in the tree.
+    - XX: Point cloud used only to infer the spatial dimension.
+    - c0: Unused, retained for API compatibility.
+    - L0: Unused, retained for API compatibility.
+    - leaf_keys: Morton keys for the leaves of the unbalanced tree.
 
     Returns:
-    - balanced_leaf_keys: A 1D NumPy array of integers containing the Morton keys of the balanced leaf nodes in the tree.
-                          Each key corresponds to a unique leaf containing a subset of the input points `XX`.
-
+    - balanced_leaf_keys: Morton keys for the leaves of the balanced tree.
+    - balanced_tree_keys: Morton keys for all occupied nodes in the balanced tree.
     """
 
     ndim = XX.shape[-1]
+    if (leaf_keys.shape[0] == 0):
+        return leaf_keys.copy(),leaf_keys.copy()
 
-    depth = np.max(morton.get_level(leaf_keys))
-    leaf_keys = set(leaf_keys)
-    for lev in range(depth,1,-1):
+    unbalanced_tree_keys = _get_complete_tree(leaf_keys,ndim=ndim)
+    nonleaf_keys = np.setdiff1d(unbalanced_tree_keys,leaf_keys,assume_unique=True)
 
-        tmp = np.array(list(leaf_keys),dtype=int)
-        keys_lev = tmp[morton.get_level(tmp) == lev]
-        if (keys_lev.shape[0] == 0):
+    if (nonleaf_keys.shape[0] == 0):
+        return leaf_keys.copy(),np.sort(unbalanced_tree_keys)
+
+    nonleaf_levels = morton.get_level(nonleaf_keys)
+    depth = np.max(nonleaf_levels)
+
+    balanced_nonleaf_keys = []
+    carry = np.array([],dtype=int)
+
+    for lev in range(depth,-1,-1):
+        current = nonleaf_keys[nonleaf_levels == lev]
+        if (carry.shape[0] > 0):
+            current = np.unique(np.concatenate((current,carry)))
+
+        if (current.shape[0] == 0):
+            carry = np.array([],dtype=int)
             continue
 
-        colleagues_vec  = morton.get_colleagues_vec(keys_lev,ndim=ndim)
-        colleagues      = colleagues_vec[colleagues_vec > 0]
+        balanced_nonleaf_keys.append(current)
 
-        parents = morton.get_parent(colleagues,ndim=ndim)
-        sibs    = morton.get_siblings_vec(parents,ndim=ndim)
+        if (lev > 0):
+            colleagues = morton.get_colleagues_vec(current,ndim=ndim).reshape(-1)
+            colleagues = np.unique(colleagues[colleagues >= 0])
+            carry = np.unique(morton.get_parent(colleagues,ndim=ndim))
+        else:
+            carry = np.array([],dtype=int)
 
-        for j in range(colleagues.shape[0]):
-            if (not (colleagues[j] in leaf_keys) and not (parents[j] in leaf_keys)):
-                leaf_keys.update(sibs[j])
+    balanced_nonleaf_keys = np.unique(np.concatenate(balanced_nonleaf_keys))
 
-    # process may have introduced redundant ancestor nodes
-    # traverse from bottom level again and remove ancestors
-    for lev in range(depth,0,-1):
+    nsibs = 1 << ndim
+    child_roots = morton.set_level(
+        morton.clear_level(balanced_nonleaf_keys) << ndim,
+        morton.get_level(balanced_nonleaf_keys) + 1,
+    )
+    children = child_roots.reshape(-1,1) | np.arange(nsibs,dtype=int).reshape(1,-1)
 
-        tmp = np.array(list(leaf_keys),dtype=int)
-        keys_lev = tmp[morton.get_level(tmp) == lev]
-        if (keys_lev.shape[0] == 0):
-            continue
+    candidate_tree_keys = np.unique(np.concatenate((np.array([0],dtype=int),children.reshape(-1))))
+    candidate_leaf_keys = np.setdiff1d(candidate_tree_keys,balanced_nonleaf_keys,assume_unique=True)
 
-        anchors_points = morton.points_to_anchors(XX,lev,c0,L0,ndim=ndim)
-        keys_points    = set(morton.anchors_to_keys(anchors_points,ndim=ndim))
+    deepest_level,deepest_raw_keys = _sorted_deepest_raw_keys(XX,c0,L0,ndim)
 
-        ancestors = morton.get_ancestors_vec(keys_lev,ndim=ndim)
-        leaf_keys.difference_update(set(ancestors.flatten()))
+    keep_leaf_keys = []
+    leaf_levels = morton.get_level(candidate_leaf_keys)
+    raw_leaf_keys = morton.clear_level(candidate_leaf_keys)
+    for lev in np.unique(leaf_levels):
+        lev_mask = leaf_levels == lev
+        keys_lev = candidate_leaf_keys[lev_mask]
+        raw_lev = raw_leaf_keys[lev_mask]
 
-        diff = set(keys_lev).difference(keys_points)
-        leaf_keys -= diff
+        shift = ndim * (deepest_level - lev)
+        lower = raw_lev << shift
+        upper = (raw_lev + 1) << shift
 
-    return np.array(list(leaf_keys),dtype=int)
+        ind0 = np.searchsorted(deepest_raw_keys,lower,side='left')
+        ind1 = np.searchsorted(deepest_raw_keys,upper,side='left')
+        keep_leaf_keys.append(keys_lev[ind1 > ind0])
+
+    if (len(keep_leaf_keys) == 0):
+        balanced_leaf_keys = np.array([0],dtype=int)
+    else:
+        balanced_leaf_keys = np.sort(np.concatenate(keep_leaf_keys))
+
+    return balanced_leaf_keys,_get_complete_tree(balanced_leaf_keys,ndim=ndim)
 
 def _get_leaf_keys(XX,c0,L0,max_bs):
     """
@@ -168,21 +224,19 @@ def _get_leaf_keys(XX,c0,L0,max_bs):
 
     Returns:
     - unbalanced_keys: A sorted 1D NumPy array of integers containing the Morton keys of the unbalanced leaf nodes.
-    - leaf_keys: A sorted 1D NumPy array of integers containing the Morton keys of the balanced leaf nodes.
+    - leaf_keys: A sorted 1D NumPy array of integers containing the balanced leaf nodes.
+    - tree_keys: A sorted 1D NumPy array of integers containing all occupied nodes in the balanced tree.
     """
 
-    tic = time()
     unbalanced_keys = _unbalanced_tree(XX,c0,L0,max_bs)
-    toc_unbalanced = time() - tic
 
-    tic = time()
     lev = morton.get_level(unbalanced_keys)
     if ( (np.max(lev) - np.min(lev)) > 1):
-        leaf_keys  = _balance_tree(XX,c0,L0,unbalanced_keys.copy())
+        leaf_keys,tree_keys = _balance_tree(XX,c0,L0,unbalanced_keys.copy())
     else:
         leaf_keys = unbalanced_keys.copy()
-    toc_balance = time() - tic
-    return np.sort(unbalanced_keys),np.sort(leaf_keys)
+        tree_keys = _get_complete_tree(leaf_keys,ndim=XX.shape[-1])
+    return np.sort(unbalanced_keys),np.sort(leaf_keys),np.sort(tree_keys)
 
 def _get_complete_tree(leaf_keys,ndim):
     """
@@ -198,14 +252,20 @@ def _get_complete_tree(leaf_keys,ndim):
     - tree_keys: A sorted 1D NumPy array of integers containing the Morton keys of all nodes in the complete tree,
                  including both leaf and tree nodes.
     """
+    if (leaf_keys.shape[0] == 0):
+        return leaf_keys.copy()
 
+    keys_curr = np.unique(leaf_keys.astype(int))
+    all_keys = [keys_curr]
 
-    depth = np.max(morton.get_level(leaf_keys))
-    tree_keys = set(leaf_keys.copy())
+    while (keys_curr.shape[0] > 0):
+        positive = morton.get_level(keys_curr) > 0
+        if (not np.any(positive)):
+            break
+        keys_curr = np.unique(morton.get_parent(keys_curr[positive],ndim=ndim))
+        all_keys.append(keys_curr)
 
-    for leaf in leaf_keys:
-        tree_keys.update(set(morton.get_ancestors(leaf,ndim=ndim)))
-    return np.sort(np.array(list(tree_keys),dtype=int))
+    return np.sort(np.unique(np.concatenate(all_keys)))
 
 ######################################  MORTON TREE CLASS #########################################
 
@@ -230,8 +290,12 @@ class MortonTree(AbstractTree):
 
         assert ( (XX.shape[-1] == 2) or (XX.shape[-1] == 3))
 
-        if ((c0 is None) and (L0 is None)):
-            c0,L0          = morton.get_root_params(XX)
+        if (c0 is None) or (L0 is None):
+            c0_auto,L0_auto = morton.get_root_params(XX)
+            if (c0 is None):
+                c0 = c0_auto
+            if (L0 is None):
+                L0 = L0_auto
         self.XX        = XX
         self.c0        = c0
         self.L0        = L0
@@ -239,7 +303,6 @@ class MortonTree(AbstractTree):
         self.leaf_size = leaf_size
         self.leaf_size_param = leaf_size
         self._form_tree(leaf_size)
-        self._color_boxes()
 
     @property
     def N(self):
@@ -278,16 +341,9 @@ class MortonTree(AbstractTree):
         - Llist_tmp: An internal data structure for coarse neighbors.
         """
 
-        tic = time()
-        unbalanced_keys,leaf_keys = _get_leaf_keys(self.XX,self.c0,self.L0,leaf_size)
-        toc_leaf = time() - tic
-
-        tic = time()
-        tree_keys = _get_complete_tree(leaf_keys,ndim=self.ndim)
-        toc_complete = time() - tic
+        unbalanced_keys,leaf_keys,tree_keys = _get_leaf_keys(self.XX,self.c0,self.L0,leaf_size)
 
         nboxes    = tree_keys.shape[0]
-        depth     = np.max(morton.get_level(leaf_keys))
         lev       = morton.get_level(tree_keys)
 
         _,level_sep = np.unique(lev,return_index=True)
@@ -299,13 +355,10 @@ class MortonTree(AbstractTree):
         self.tree_keys       = tree_keys
         self.level_sep       = level_sep
 
-        tic = time()
         self.perm_leaf,self.leaf_sep = self._get_leaf_sep()
-        toc_sep = time() - tic
 
-        tic = time()
-        self.Clist_tmp, self.Llist_tmp = self._get_CL_lists_vec()
-        toc_lists = time() - tic
+        self.Clist_tmp = None
+        self.Llist_tmp = None
 
 
     def _get_leaf_sep(self):
@@ -317,32 +370,34 @@ class MortonTree(AbstractTree):
         - perm_leaf: A permutation vector of indices such that indices for the same leaf are grouped together.
         - leaf_sep: An array indicating the separation indices for the permutation.
         """
+        leaf_levels = morton.get_level(self.leaf_keys)
+        max_lev = np.max(leaf_levels)
 
-        lev_leaf = morton.get_level(self.leaf_keys)
-        min_lev = np.min(lev_leaf); max_lev = np.max(lev_leaf)
+        anchors_points = morton.points_to_anchors(self.XX,max_lev,self.c0,self.L0,ndim=self.ndim)
+        keys_points = morton.anchors_to_keys(anchors_points,ndim=self.ndim)
+        raw_keys_points = morton.clear_level(keys_points)
+
+        sorted_perm = np.argsort(raw_keys_points)
+        sorted_raw_keys = raw_keys_points[sorted_perm]
 
         nleaf = self.leaf_keys.shape[0]
+        perm_leaf = np.zeros(self.N,dtype=int)
+        leaf_sep = np.zeros(nleaf+1,dtype=int)
 
-        perm_leaf  = np.zeros(self.N,dtype=int);
-        leaf_sep   = np.zeros(nleaf+1,dtype=int)
-        leaf_count = 0
+        raw_leaf_keys = morton.clear_level(self.leaf_keys)
+        acc = 0
+        for j,key in enumerate(raw_leaf_keys):
+            shift = self.ndim * (max_lev - leaf_levels[j])
+            lower = key << shift
+            upper = (key + 1) << shift
 
-        for lev in range(min_lev,max_lev+1):
-            anchors_points = morton.points_to_anchors(self.XX,lev,self.c0,self.L0,ndim=self.ndim)
-            keys_points    = morton.anchors_to_keys(anchors_points,ndim=self.ndim)
-            sorted_perm_lev = np.argsort(keys_points)
+            ind0 = np.searchsorted(sorted_raw_keys,lower,side='left')
+            ind1 = np.searchsorted(sorted_raw_keys,upper,side='left')
 
-            unique_keys,indices = np.unique(keys_points[sorted_perm_lev],return_index=True)
-            indices = np.concatenate(( indices, np.array([self.N]) ))
-
-            for j,key in enumerate(unique_keys):
-                if (in_sorted(self.leaf_keys,key)):
-
-                    inds_loc = sorted_perm_lev[indices[j]:indices[j+1]]
-                    bnd1 = leaf_sep[leaf_count]
-                    bnd2 = leaf_sep[leaf_count]+inds_loc.shape[0]
-                    perm_leaf[bnd1 : bnd2] = inds_loc
-                    leaf_count += 1; leaf_sep[leaf_count] = bnd2
+            nloc = ind1 - ind0
+            perm_leaf[acc : acc + nloc] = sorted_perm[ind0:ind1]
+            acc += nloc
+            leaf_sep[j+1] = acc
 
         return perm_leaf,leaf_sep
 
@@ -393,8 +448,13 @@ class MortonTree(AbstractTree):
                   self.level_sep[lev+1]] = coarse_neigh_boxes.reshape(nboxes_lev,nmax)
         return Clist,Llist
 
+    def _ensure_neighbor_lists(self):
+        if (self.Clist_tmp is None) or (self.Llist_tmp is None):
+            self.Clist_tmp, self.Llist_tmp = self._get_CL_lists_vec()
+
 
     def get_ordered_colleague_pairs(self,root_level=1):
+        self._ensure_neighbor_lists()
 
         Clist = self.Clist_tmp; nmax   = Clist.shape[-1]
 
@@ -472,16 +532,19 @@ class MortonTree(AbstractTree):
         return findin_sorted_vec(self.tree_keys,child_keys)
 
     def get_box_colleague_neigh(self,box):
+        self._ensure_neighbor_lists()
 
         box_list = self.Clist_tmp[box]
         return box_list[box_list >= 0]
 
     def get_box_coarse_neigh(self,box):
+        self._ensure_neighbor_lists()
 
         box_list = self.Llist_tmp[box]
         return np.unique(box_list[box_list >= 0])
 
     def get_box_fine_neigh(self,box):
+        self._ensure_neighbor_lists()
         rows, _ = np.where(self.Llist_tmp == box)
         rows = np.unique(rows)
 

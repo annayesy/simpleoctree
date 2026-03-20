@@ -1,10 +1,10 @@
 # simpleoctree
 
-[![DOI](https://zenodo.org/badge/811938075.svg)](https://doi.org/10.5281/zenodo.14613403)
-[![License](https://img.shields.io/github/license/annayesy/slabLU)](./LICENSE.md)
-[![Top language](https://img.shields.io/github/languages/top/annayesy/simplebalancedoctree)](https://www.python.org)
-![Code size](https://img.shields.io/github/languages/code-size/annayesy/simplebalancedoctree)
-[![Latest commit](https://img.shields.io/github/last-commit/annayesy/simplebalancedoctree)](https://github.com/annayesy/simplebalancedoctree/commits/main)
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.14613403.svg)](https://doi.org/10.5281/zenodo.14613403)
+[![License](https://img.shields.io/github/license/annayesy/simpleoctree)](./LICENSE)
+[![Top language](https://img.shields.io/github/languages/top/annayesy/simpleoctree)](https://www.python.org)
+![Code size](https://img.shields.io/github/languages/code-size/annayesy/simpleoctree)
+[![Latest commit](https://img.shields.io/github/last-commit/annayesy/simpleoctree)](https://github.com/annayesy/simpleoctree/commits/main)
 
 An adaptive 2:1 balanced tree for point distributions in 2D and 3D, written in Python with minimal dependencies.
 
@@ -12,7 +12,7 @@ An adaptive 2:1 balanced tree for point distributions in 2D and 3D, written in P
 **simpleoctree** is a Python package that adaptively partitions point distributions in 2D and 3D into a 2:1 balanced tree structure. The package ensures that any two neighboring leaf nodes are either on the same level or differ by one level, resulting in a neighbor list of bounded size.
 
 <p align="center">
-    <img src="https://github.com/annayesy/simplebalancedoctree/blob/main/examples/tree_balance.png" width="75%"/>
+    <img src="https://github.com/annayesy/simpleoctree/blob/main/examples/tree_balance.png" width="75%"/>
 </p>
 <div style="display: flex; justify-content: center;">
     <p style="width: 75%; text-align: center; font-size: 90%;">
@@ -20,7 +20,7 @@ An adaptive 2:1 balanced tree for point distributions in 2D and 3D, written in P
     </p>
 </div>
 <p align="center">
-    <img src="https://github.com/annayesy/simplebalancedoctree/blob/main/examples/curvy_annulus.png" width="40%"/>
+    <img src="https://github.com/annayesy/simpleoctree/blob/main/examples/curvy_annulus.png" width="40%"/>
 </p>
 <div style="display: flex; justify-content: center;">
     <p style="width: 60%; text-align: center; font-size: 90%;">
@@ -44,4 +44,3 @@ The tree structure includes many useful utilities for accessing neighbors, paren
 
 This package is particularly useful for the development of fast solvers for adaptive geometries, e.g. the Fast Multipole Method (FMM) and the compression and [invertible] factorization of $\mathcal H$-matrices.
 For more detailed examples and usage instructions, please refer to the repository's documentation and example scripts.
-
