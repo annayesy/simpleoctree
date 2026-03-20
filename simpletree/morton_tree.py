@@ -359,6 +359,11 @@ class MortonTree(AbstractTree):
 
         self.Clist_tmp = None
         self.Llist_tmp = None
+        self.Llist_unique_tmp = None
+        self.leaf_boxes_tmp = None
+        self.leaf_entry_by_box_tmp = None
+        self.box_is_leaf_tmp = None
+        self.children_fullvec_tmp = None
 
 
     def _get_leaf_sep(self):
@@ -451,6 +456,47 @@ class MortonTree(AbstractTree):
     def _ensure_neighbor_lists(self):
         if (self.Clist_tmp is None) or (self.Llist_tmp is None):
             self.Clist_tmp, self.Llist_tmp = self._get_CL_lists_vec()
+        if self.Llist_unique_tmp is None:
+            self.Llist_unique_tmp = np.ones_like(self.Llist_tmp) * (-1)
+            for box in range(self.nboxes):
+                box_list = self.Llist_tmp[box]
+                valid = box_list[box_list >= 0]
+                if valid.size == 0:
+                    continue
+                if valid.size > 1 and np.all(valid[1:] >= valid[:-1]):
+                    keep = np.ones(valid.shape[0], dtype=bool)
+                    keep[1:] = valid[1:] != valid[:-1]
+                    valid = valid[keep]
+                elif valid.size > 1:
+                    valid = np.unique(valid)
+                self.Llist_unique_tmp[box, :valid.shape[0]] = valid
+
+    def _ensure_traversal_caches(self):
+        if self.leaf_boxes_tmp is None:
+            leaf_boxes = findin_sorted_vec(self.tree_keys,self.leaf_keys)
+            self.leaf_boxes_tmp = leaf_boxes
+
+            self.leaf_entry_by_box_tmp = np.ones(self.nboxes,dtype=int) * (-1)
+            self.leaf_entry_by_box_tmp[leaf_boxes] = np.arange(leaf_boxes.shape[0])
+
+            self.box_is_leaf_tmp = np.zeros(self.nboxes,dtype=bool)
+            self.box_is_leaf_tmp[leaf_boxes] = True
+
+        if self.children_fullvec_tmp is None:
+            nchildren = 1 << self.ndim
+            children_fullvec = np.ones((self.nboxes,nchildren),dtype=int) * (-1)
+
+            for lev in range(self.nlevels-1):
+                boxes_lev = np.arange(self.level_sep[lev],self.level_sep[lev+1])
+                if boxes_lev.shape[0] == 0:
+                    continue
+
+                keys_lev = self.tree_keys[boxes_lev]
+                child_seed_keys = morton.set_level(morton.clear_level(keys_lev) << self.ndim, lev+1)
+                child_keys = morton.get_siblings_vec(child_seed_keys, ndim=self.ndim)
+                children_fullvec[boxes_lev] = findin_sorted_vec(self.tree_keys, child_keys.reshape(-1)).reshape(-1,nchildren)
+
+            self.children_fullvec_tmp = children_fullvec
 
 
     def get_ordered_colleague_pairs(self,root_level=1):
@@ -527,9 +573,12 @@ class MortonTree(AbstractTree):
         return findin_sorted_vec(self.tree_keys,child_keys[valid_keys])
 
     def get_box_children_fullvec(self,box):
-        key = self.tree_keys[box]
-        child_keys = morton.get_children(key,ndim=self.ndim)
-        return findin_sorted_vec(self.tree_keys,child_keys)
+        self._ensure_traversal_caches()
+        return self.children_fullvec_tmp[box]
+
+    def get_boxes_children_fullvec(self,boxes):
+        self._ensure_traversal_caches()
+        return self.children_fullvec_tmp[boxes]
 
     def get_box_colleague_neigh(self,box):
         self._ensure_neighbor_lists()
@@ -537,11 +586,19 @@ class MortonTree(AbstractTree):
         box_list = self.Clist_tmp[box]
         return box_list[box_list >= 0]
 
+    def get_boxes_colleague_neigh_fullvec(self,boxes):
+        self._ensure_neighbor_lists()
+        return self.Clist_tmp[boxes]
+
     def get_box_coarse_neigh(self,box):
         self._ensure_neighbor_lists()
 
-        box_list = self.Llist_tmp[box]
-        return np.unique(box_list[box_list >= 0])
+        box_list = self.Llist_unique_tmp[box]
+        return box_list[box_list >= 0]
+
+    def get_boxes_coarse_neigh_fullvec(self,boxes):
+        self._ensure_neighbor_lists()
+        return self.Llist_unique_tmp[boxes]
 
     def get_box_fine_neigh(self,box):
         self._ensure_neighbor_lists()
@@ -566,7 +623,8 @@ class MortonTree(AbstractTree):
         return morton.get_key_params(key,self.c0,self.L0)[1]
 
     def get_leaves(self):
-        return findin_sorted_vec(self.tree_keys,self.leaf_keys)
+        self._ensure_traversal_caches()
+        return self.leaf_boxes_tmp
 
     def get_boxes_level(self,lev):
         return np.arange(self.level_sep[lev],self.level_sep[lev+1])
@@ -578,11 +636,12 @@ class MortonTree(AbstractTree):
         return findin_sorted_vec(self.tree_keys,keys)
 
     def get_box_inds(self,box):
+        self._ensure_traversal_caches()
         key = self.tree_keys[box]
 
-        leaf_entry = findin_sorted(self.leaf_keys,key)
+        leaf_entry = self.leaf_entry_by_box_tmp[box]
 
-        if ( leaf_entry > 0):
+        if ( leaf_entry >= 0):
             return self.perm_leaf[ self.leaf_sep[leaf_entry] : self.leaf_sep[leaf_entry+1]]
 
         else:
@@ -598,9 +657,9 @@ class MortonTree(AbstractTree):
             return sorted_perm[ indices[j] : indices[j+1]]
 
     def is_leaf(self,box):
-        key = self.tree_keys[box]
-        return in_sorted(self.leaf_keys,key)
+        self._ensure_traversal_caches()
+        return self.box_is_leaf_tmp[box]
 
     def are_leaves(self,box):
-        key = self.tree_keys[box]
-        return in_sorted_vec(self.leaf_keys,key)
+        self._ensure_traversal_caches()
+        return self.box_is_leaf_tmp[box]
