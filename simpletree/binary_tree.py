@@ -1,324 +1,175 @@
 import numpy as np
+
 from simpletree.abstract_tree import AbstractTree
-from simpletree.morton_tree   import MortonTree
 
-def childvec_helper(child_vec):
 
-	if (child_vec.shape[0] == 4):
-		[DL_exists,UL_exists,DR_exists,UR_exists] = child_vec > 0
-		tmp = child_vec.reshape(2,2)
-		L_exists = np.any(tmp[0]>=0)
-		R_exists = np.any(tmp[1]>=0)
+def _get_root_params(XX):
+    min_bound = np.min(XX, axis=0)
+    max_bound = np.max(XX, axis=0)
 
-	else:
-		#[BDL_exists,BUL_exists,BDR_exists,BUR_exists,\
-		# FDL_exists,FUL_exists,FDR_exists,FUR_exists] = child_vec > 0
-		tmp = child_vec.reshape(2,2,2)
-		L_exists  = np.any(tmp[:,0,:]>=0)
-		R_exists  = np.any(tmp[:,1,:]>=0)
+    center = 0.5 * (min_bound + max_bound)
+    length = max_bound - min_bound
 
-		DL_exists = np.any(tmp[:,0,0]>=0)
-		UL_exists = np.any(tmp[:,0,1]>=0)
-		DR_exists = np.any(tmp[:,1,0]>=0)
-		UR_exists = np.any(tmp[:,1,1]>=0)
-	return L_exists,R_exists,\
-	DL_exists,UL_exists,DR_exists,UR_exists
-
-def get_nboxes_extra(mtree,lev):
-
-	bin_offset = 0; quad_offset = 0; oct_offset = 0
-	ndim       = mtree.ndim
-
-	for mbox in mtree.get_boxes_level(lev):
-
-		if (mtree.is_leaf(mbox)):
-			continue
-
-		child_vec = mtree.get_box_children_fullvec(mbox)
-
-		L_exists,R_exists,\
-		DL_exists,UL_exists,DR_exists,UR_exists = childvec_helper(child_vec)
-
-		bin_offset  += int(L_exists) + int(R_exists)
-		quad_offset += int(DL_exists)+ int(UL_exists) + int(DR_exists) + int(UR_exists)
-		if (mtree.ndim  == 3):
-			oct_offset += np.sum((child_vec > 0).astype(int))
-
-	return bin_offset,quad_offset,oct_offset
-
-def get_lev_offset(mtree):
-
-	lev_offset   = np.zeros(mtree.nlevels * 2**(mtree.ndim -1) + 1, dtype=int)
-	lev_offset[1]= 1
-	nlevels      = 1
-
-	for lev in range(mtree.nlevels):
-
-		bin_offset,quad_offset,oct_offset = get_nboxes_extra(mtree,lev)
-
-		if (bin_offset > 0):
-			lev_offset[nlevels+1] = lev_offset[nlevels] + bin_offset
-			nlevels += 1
-		if (quad_offset > 0):
-			lev_offset[nlevels+1] = lev_offset[nlevels] + quad_offset
-			nlevels += 1
-		if (oct_offset > 0):
-			lev_offset[nlevels+1] = lev_offset[nlevels] + oct_offset
-			nlevels += 1
-	lev_offset = lev_offset[:nlevels+1]
-
-	return lev_offset
+    # Keep a nonzero box size even for degenerate point clouds.
+    pad = np.maximum(1e-3, 1e-3 * np.maximum(length, 1.0))
+    return center, length + pad
 
 
 class BinaryTree(AbstractTree):
 
-	def __init__(self,XX,leaf_size = 100,c0=None,L0=None):
+    def __init__(self, XX, leaf_size=100, c0=None, L0=None):
+
+        XX = np.asarray(XX, dtype=float)
+        assert XX.ndim == 2
+        assert XX.shape[-1] in (2, 3)
+        if XX.shape[0] == 0:
+            raise ValueError("XX must contain at least one point")
+
+        self.XX = XX
+        self.ndim = XX.shape[-1]
+        self.leaf_size = leaf_size
+
+        if c0 is None or L0 is None:
+            center_auto, length_auto = _get_root_params(XX)
+            if c0 is None:
+                c0 = center_auto
+            if L0 is None:
+                L0 = length_auto
+
+        self.root_center = np.asarray(c0, dtype=float)
+        if self.root_center.shape != (self.ndim,):
+            raise ValueError("c0 must have shape (ndim,)")
+
+        root_length = np.asarray(L0, dtype=float)
+        if root_length.ndim == 0:
+            root_length = np.full(self.ndim, float(root_length))
+        if root_length.shape != (self.ndim,):
+            raise ValueError("L0 must be a scalar or have shape (ndim,)")
+        if np.any(root_length <= 0):
+            raise ValueError("L0 must be positive")
+        self.root_length = root_length
+
+        self._build_tree()
+
+    def _build_tree(self):
+
+        centers = [self.root_center]
+        lengths = [self.root_length]
+        point_lists = [np.arange(self.XX.shape[0], dtype=int)]
+        levels = [0]
+        parents = [-1]
+        children = [[-1, -1]]
+        isleaf = [False]
+
+        box = 0
+        while box < len(point_lists):
+            point_inds = point_lists[box]
+            level = levels[box]
+            center = centers[box]
+            length = lengths[box]
+
+            split = self._split_box(point_inds, center, length, level)
+            if split is None:
+                isleaf[box] = True
+                box += 1
+                continue
+
+            children[box] = []
+            for child_inds, child_center, child_length in split:
+                child_box = len(point_lists)
+                point_lists.append(child_inds)
+                centers.append(child_center)
+                lengths.append(child_length)
+                levels.append(level + 1)
+                parents.append(box)
+                children.append([-1, -1])
+                isleaf.append(False)
+                children[box].append(child_box)
+            box += 1
+
+        self.center_list = np.asarray(centers, dtype=float)
+        self.length_list = np.asarray(lengths, dtype=float)
+        self.level_list = np.asarray(levels, dtype=int)
+        self.parent_list = np.asarray(parents, dtype=int)
+        self.child_list = np.asarray(children, dtype=int)
+        self.isleaf_list = np.asarray(isleaf, dtype=bool)
+        self.point_lists = point_lists
+
+        _, level_sep = np.unique(self.level_list, return_index=True)
+        self.level_sep = np.concatenate((level_sep, np.array([len(point_lists)], dtype=int)))
+
+    def _split_box(self, point_inds, center, length, level):
+        if point_inds.shape[0] <= self.leaf_size:
+            return None
+
+        for offset in range(self.ndim):
+            axis = (level + offset) % self.ndim
+            coords = self.XX[point_inds, axis]
+            left_mask = coords < center[axis]
+            if np.all(left_mask) or np.all(~left_mask):
+                continue
+
+            child_length = length.copy()
+            child_length[axis] *= 0.5
+
+            left_center = center.copy()
+            right_center = center.copy()
+            shift = 0.25 * length[axis]
+            left_center[axis] -= shift
+            right_center[axis] += shift
+
+            left_inds = point_inds[left_mask]
+            right_inds = point_inds[~left_mask]
+            return [
+                (left_inds, left_center, child_length.copy()),
+                (right_inds, right_center, child_length.copy()),
+            ]
 
-		self.XX   = XX
-		self.ndim = XX.shape[-1]
-		mtree = MortonTree(XX,leaf_size,c0,L0)
+        return None
 
-		lev_offset = get_lev_offset(mtree)
+    @property
+    def N(self):
+        return self.XX.shape[0]
 
-		nboxes = lev_offset[-1]
+    @property
+    def nboxes(self):
+        return self.center_list.shape[0]
 
-		# find what boxes in original tree map to binary tree
-		# mbox_ref[new_box] gives a pointer to old box if applicable
-		mbox_list    = np.ones(nboxes,dtype=int)     * (-1)
-		mbox_list[0] = 0
+    @property
+    def nlevels(self):
+        return self.level_sep.shape[0] - 1
 
-		parent_list  = np.ones(nboxes,dtype=int)     * (-1)
-		child_list   = np.ones((nboxes,2),dtype=int) * (-1)
+    def get_box_center(self, box):
+        return self.center_list[box]
 
-		center_list  = np.zeros((nboxes,self.ndim))
-		length_list  = np.zeros((nboxes,self.ndim))
-		isleaf_list  = np.zeros(nboxes,dtype=bool)
+    def get_box_length(self, box):
+        return self.length_list[box]
 
-		for lev in range(mtree.nlevels):
+    def get_box_level(self, box):
+        return self.level_list[box]
 
-			if (lev < mtree.nlevels - 1):
-				offset_lev0 = lev_offset[(self.ndim) * lev+1]
-				offset_lev1 = lev_offset[(self.ndim) * lev+2]
-			else:
-				offset_lev0 = nboxes; offset_lev1 = nboxes
+    def get_box_children(self, box):
+        tmp = self.child_list[box]
+        return tmp[tmp >= 0]
 
-			if (self.ndim == 3 and lev < mtree.nlevels - 1):
-				offset_lev2 = lev_offset[(self.ndim) * lev+3]
-			else:
-				offset_lev2 = nboxes
+    def get_box_parent(self, box):
+        return self.parent_list[box]
 
-			for mbox in mtree.get_boxes_level(lev):
+    def get_box_inds(self, box):
+        return self.point_lists[box]
 
-				bbox              = np.where(mbox_list == mbox)[0][0]
+    def get_boxes_level(self, level):
+        assert level < self.nlevels
+        return np.arange(self.level_sep[level], self.level_sep[level + 1])
 
-				mcenter           = mtree.get_box_center(mbox)
-				Ldim              = mtree.get_box_length(mbox)
-				center_list[bbox] = mcenter
-				length_list[bbox] = Ldim
+    def get_leaves(self):
+        return np.where(self.isleaf_list)[0]
 
-				if (mtree.is_leaf(mbox)):
-					isleaf_list[bbox] = True
-					continue
+    def is_leaf(self, box):
+        return self.isleaf_list[box]
 
-				child_vec = mtree.get_box_children_fullvec(mbox)
+    def get_box_coarse_neigh(self, box):
+        return np.array([], dtype=int)
 
-				L_exists,R_exists,\
-				DL_exists,UL_exists,DR_exists,UR_exists = childvec_helper(child_vec)
-
-				def shift_center_length(center,L,shift_array):
-
-					new_center = center.copy(); new_L = L.copy()
-					for (j,shift) in enumerate(shift_array):
-						if (shift == 1):
-							new_center[j] += L[j]/4
-							new_L[j]       = L[j]/2
-						elif (shift == -1):
-							new_center[j] -= L[j]/4
-							new_L[j]       = L[j]/2
-					return new_center,new_L
-
-				def assign_mbox_split_helper(child_vec_loc,offset_lev0_loc,offset_lev1_loc):
-
-					tmp         = np.where(child_vec_loc > 0)[0]
-					split_boxes = np.arange(tmp.shape[0]) + offset_lev1_loc
-
-					child_list[offset_lev0_loc,tmp] = split_boxes
-					parent_list[split_boxes]        = offset_lev0_loc
-
-					mbox_list[split_boxes]         = child_vec_loc[tmp]
-					return tmp.shape[0]
-
-				if (L_exists):
-
-					child_list [bbox,0]      = offset_lev0
-					parent_list[offset_lev0] = bbox
-
-					if (self.ndim == 2):
-						center_list[offset_lev0],length_list[offset_lev0] = \
-						shift_center_length( mcenter,Ldim,np.array([-1,0]) )
-
-						#quad split
-						offset_lev1 += assign_mbox_split_helper(child_vec[:2],offset_lev0,offset_lev1)
-						offset_lev0 += 1
-
-					else:
-						center_list[offset_lev0],length_list[offset_lev0] = \
-						shift_center_length(mcenter,Ldim,np.array([0,-1,0]) )
-
-						# quad split
-						if (DL_exists):
-
-							child_list [offset_lev0,0] = offset_lev1
-							parent_list[offset_lev1]   = offset_lev0
-
-							center_list[offset_lev1],length_list[offset_lev1] = \
-							shift_center_length( mcenter,Ldim,np.array([0,-1,-1]) )
-
-							# assign mbox split helper here
-							offset_lev2 += assign_mbox_split_helper(child_vec[np.array([0,4])],\
-								offset_lev1,offset_lev2)
-
-							offset_lev1 += 1
-
-						if (UL_exists):
-							child_list [offset_lev0,1] = offset_lev1
-							parent_list[offset_lev1]   = offset_lev0
-
-							center_list[offset_lev1],length_list[offset_lev1] = \
-							shift_center_length( mcenter,Ldim,np.array([0,-1,+1]) )
-
-							# assign mbox split helper here
-							offset_lev2 += assign_mbox_split_helper(child_vec[np.array([1,5])],\
-								offset_lev1,offset_lev2)
-
-							offset_lev1 += 1
-
-						offset_lev0 += 1
-
-				if (R_exists):
-
-					child_list[bbox,1]       = offset_lev0
-					parent_list[offset_lev0] = bbox
-
-					if (self.ndim == 2):
-						center_list[offset_lev0],length_list[offset_lev0] = \
-						shift_center_length( mcenter,Ldim,np.array([+1,0]) )
-
-						# quad split
-						offset_lev1 += assign_mbox_split_helper(child_vec[2:],offset_lev0,offset_lev1)
-						offset_lev0 += 1
-					else:
-
-						center_list[offset_lev0],length_list[offset_lev0] = \
-						shift_center_length(mcenter,Ldim,np.array([0,+1,0]) )
-
-						# quad split
-						if (DR_exists):
-
-							child_list [offset_lev0,0] = offset_lev1
-							parent_list[offset_lev1]   = offset_lev0
-
-							center_list[offset_lev1],length_list[offset_lev1] = \
-							shift_center_length( mcenter,Ldim,np.array([0,+1,-1]) )
-
-							# assign mbox split helper here
-							offset_lev2 += assign_mbox_split_helper(child_vec[np.array([2,6])],\
-								offset_lev1,offset_lev2)
-
-							offset_lev1 += 1
-
-						if (UR_exists):
-							child_list [offset_lev0,1] = offset_lev1
-							parent_list[offset_lev1]   = offset_lev0
-
-							center_list[offset_lev1],length_list[offset_lev1] = \
-							shift_center_length( mcenter,Ldim,np.array([0,+1,+1]) )
-
-							# assign mbox split helper here
-							offset_lev2 += assign_mbox_split_helper(child_vec[np.array([3,7])],\
-								offset_lev1,offset_lev2)
-
-							offset_lev1 += 1
-						offset_lev0 += 1
-
-
-		self.level_sep   = lev_offset
-		self.center_list = center_list
-		self.length_list = length_list
-		self.isleaf_list = isleaf_list
-		self.parent_list = parent_list
-		self.child_list  = child_list
-		self.mbox_list   = mbox_list
-		self.mtree       = mtree
-
-	@property
-	def N(self):
-		return self.XX.shape[0]
-
-	@property
-	def nboxes(self):
-		return self.level_sep[-1]
-
-	@property
-	def nlevels(self):
-		return self.level_sep.shape[0] - 1
-
-	def get_box_center(self,box):
-		return self.center_list[box]
-
-	def get_box_length(self,box):
-		return self.length_list[box]
-
-	def get_box_level(self,box):
-		return np.where((self.level_sep - box) > 0)[0][0] - 1
-
-	def get_box_children(self,box):
-		tmp = self.child_list[box]
-		return tmp [tmp > 0]
-
-	def get_box_parent(self,box):
-		return self.parent_list[box]
-
-	def acc_inds(self,list_boxes):
-		I_B = np.array([],dtype=int)
-		for b_child in list_boxes:
-			assert self.mbox_list[b_child] > 0
-			I_B = np.hstack((I_B,self.mtree.get_box_inds(self.mbox_list[b_child])))
-		return I_B
-
-	def get_box_inds(self,box):
-		if self.mbox_list[box] > 0:
-
-			return self.mtree.get_box_inds(self.mbox_list[box])
-
-		elif (self.ndim == 2 or (self.ndim == 3 and np.mod(self.get_box_level(box),3) == 2)):
-			return self.acc_inds(self.get_box_children(box))
-
-		elif (self.ndim == 3 and np.mod(self.get_box_level(box),3) == 1):
-
-			ancestors = np.array([],dtype=int)
-			for c in self.get_box_children(box):
-				ancestors = np.hstack((ancestors,self.get_box_children(c)))
-
-			return self.acc_inds(ancestors)
-
-		else:
-			raise ValueError
-
-
-	def get_boxes_level(self,level):
-		assert level < self.nlevels
-		return np.arange(self.level_sep[level],self.level_sep[level+1])
-
-	def get_leaves(self):
-		return np.where(self.isleaf_list)[0]
-
-	def is_leaf(self,box):
-		return self.isleaf_list[box]
-
-	def get_box_coarse_neigh(self,box):
-		return np.array([],dtype=int)
-
-	def get_box_colleague_neigh(self,box):
-		return np.array([box],dtype=int)
-
+    def get_box_colleague_neigh(self, box):
+        return np.array([box], dtype=int)
