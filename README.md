@@ -1,5 +1,6 @@
 # simpleoctree
 
+[![CI](https://github.com/annayesy/simpleoctree/actions/workflows/ci.yml/badge.svg)](https://github.com/annayesy/simpleoctree/actions/workflows/ci.yml)
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.14613403.svg)](https://doi.org/10.5281/zenodo.14613403)
 [![License](https://img.shields.io/github/license/annayesy/simpleoctree)](./LICENSE)
 [![Top language](https://img.shields.io/github/languages/top/annayesy/simpleoctree)](https://www.python.org)
