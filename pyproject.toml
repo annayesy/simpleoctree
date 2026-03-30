@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "simpletree"
+version = "1.0"
+description = "An adaptive 2:1 balanced tree for point distributions in 2D and 3D."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [
+  { name = "Anna Yesypenko", email = "annayesy@utexas.edu" },
+]
+dependencies = [
+  "numpy",
+]
+
+[project.optional-dependencies]
+test = [
+  "pytest",
+]
+
+[project.urls]
+Homepage = "https://github.com/annayesy/simpleoctree"
+Repository = "https://github.com/annayesy/simpleoctree"
+
+[tool.setuptools.packages.find]
+include = ["simpletree*"]

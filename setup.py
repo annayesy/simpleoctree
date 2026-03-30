@@ -1,15 +1,3 @@
-# setup.py
-from setuptools import setup, find_packages
+from setuptools import setup
 
-setup(
-    name='simpletree',
-    version='1.0',
-    packages=['simpletree'],
-    license="MIT",
-    author="Anna Yesypenko",
-    author_email='annayesy@utexas.edu',
-    url='https://github.com/annayesy/simpleoctree',
-    install_requires=[
-        'numpy',
-    ],
-)
+setup()
