@@ -89,6 +89,59 @@ def get_cube_surface(center, box_length, nproxy):
 
 ###########################################################
 
+def get_uniform_level_2d(box_length, occupancy, center=np.array([0.5, 0.5]), root_length=1.0, rng=None):
+    """
+    Generate a simple 2D point cloud supported on one uniform quadtree level.
+
+    The root box is centered at ``center`` with side length ``root_length``.
+    It is tiled by equal square boxes of side length ``box_length``, and each
+    box receives exactly ``occupancy`` uniformly distributed points.
+
+    Notes
+    -----
+    ``root_length / box_length`` must be a power of two so the boxes align
+    with a single quadtree level. If you want ``BalancedTree`` to recover
+    that exact level, pass the same ``center`` and ``root_length`` into the
+    tree constructor and use ``leaf_size=occupancy``.
+    """
+    center = np.asarray(center, dtype=float)
+    if center.shape != (2,):
+        raise ValueError("center must have shape (2,)")
+
+    box_length = float(box_length)
+    root_length = float(root_length)
+    if box_length <= 0:
+        raise ValueError("box_length must be positive")
+    if root_length <= 0:
+        raise ValueError("root_length must be positive")
+
+    occupancy_float = float(occupancy)
+    occupancy = int(occupancy_float)
+    if occupancy <= 0 or occupancy != occupancy_float:
+        raise ValueError("occupancy must be a positive integer")
+
+    nside_float = root_length / box_length
+    nside = int(np.round(nside_float))
+    if not np.isclose(nside_float, nside):
+        raise ValueError("box_length must evenly divide root_length")
+    if nside < 1 or (nside & (nside - 1)) != 0:
+        raise ValueError("root_length / box_length must be a power of two")
+
+    box_origin = center - 0.5 * root_length
+    ii, jj = np.meshgrid(np.arange(nside), np.arange(nside), indexing='ij')
+    anchors = np.stack((ii.ravel(), jj.ravel()), axis=1).astype(float)
+    box_origins = box_origin + box_length * anchors
+
+    nboxes = box_origins.shape[0]
+    if rng is None:
+        jitter = np.random.random((nboxes, occupancy, 2))
+    else:
+        jitter = rng.random((nboxes, occupancy, 2))
+
+    XX = box_origins[:, None, :] + box_length * jitter
+    return XX.reshape(nboxes * occupancy, 2)
+
+
 def get_point_dist(N,dist_str):
 
     if (dist_str == 'square'):

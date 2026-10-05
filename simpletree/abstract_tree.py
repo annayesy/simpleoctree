@@ -46,12 +46,8 @@ class AbstractTree(metaclass = ABCMeta):
     def get_box_neighbors(self,box):
         coll   = self.get_box_colleague_neigh(box)
         coarse = self.get_box_coarse_neigh(box)
-        
-        neigh_list = np.concatenate((coll,coarse))
-        tmp = np.setdiff1d(neigh_list,np.array([box]))
-        neigh_list = np.concatenate((np.array([box]),tmp))
-        
-        return neigh_list
+        others = np.setdiff1d(np.concatenate((coll,coarse)),[box])
+        return np.concatenate(([box],others))
     
     
     ################# Getter and setters for box indices ##################
@@ -91,24 +87,10 @@ class AbstractTree(metaclass = ABCMeta):
         pass
     
     def get_neigh_inds(self,box):
-        ind_func = self.get_box_inds
-
-        box_neighbors = self.get_box_neighbors(box)
-        num_neigh     = box_neighbors.shape[0]
-
-        max_ind_count  = 1000
-        tot_neigh_inds = np.zeros(max_ind_count,dtype=int); acc = 0
-        for neigh in box_neighbors:
-            neigh_inds = ind_func(neigh)
-            if (acc + neigh_inds.shape[0] > max_ind_count):
-                max_ind_count += max_ind_count + neigh_inds.shape[0]
-                tmp = np.zeros(max_ind_count,dtype=int)
-                tmp[:acc] = tot_neigh_inds[:acc]
-                tot_neigh_inds = tmp; del tmp
-
-            tot_neigh_inds[acc : acc + neigh_inds.shape[0]] = neigh_inds.copy()
-            acc += neigh_inds.shape[0]
-        return tot_neigh_inds[:acc]
+        blocks = [self.get_box_inds(neigh) for neigh in self.get_box_neighbors(box)]
+        if not blocks:
+            return np.empty(0,dtype=int)
+        return np.concatenate(blocks,dtype=int,casting="unsafe")
 
     def _color_boxes(self):
 
